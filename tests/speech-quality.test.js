@@ -24,14 +24,14 @@ test('natural Mandarin preferred without mixing arbitrary character index voices
   h.api.destroy();
 });
 
-function harness({recordings={}, voices=[], speech=true, rejectPlay=false}={}){
-  const audios=[],utterances=[],events=new Map(),timers=new Map();let tick=0,cancels=0;
+function harness({recordings={}, voices=[], speech=true, rejectPlay=false, throwAudio=false, allowSystemSpeech=true}={}){
+  const audios=[],utterances=[],events=new Map(),timers=new Map();let tick=0,cancels=0,voiceReads=0;
   const win={addEventListener:(k,f)=>events.set(k,f),removeEventListener:k=>events.delete(k),
-    Audio:class {constructor(src){this.src=src;this.pauses=0;audios.push(this)} play(){this.played=true;return rejectPlay?Promise.reject(new Error('blocked')):Promise.resolve()}pause(){this.pauses++}}};
-  if(speech){win.speechSynthesis={getVoices:()=>voices,cancel:()=>cancels++,speak:u=>utterances.push(u),addEventListener:(k,f)=>events.set(k,f),removeEventListener:k=>events.delete(k)};win.SpeechSynthesisUtterance=class{constructor(text){this.text=text}};}
+    Audio:class {constructor(src){if(throwAudio)throw new Error('unavailable');this.src=src;this.pauses=0;audios.push(this)} play(){this.played=true;return rejectPlay?Promise.reject(new Error('blocked')):Promise.resolve()}pause(){this.pauses++}}};
+  if(speech){win.speechSynthesis={getVoices:()=>{voiceReads++;return voices},cancel:()=>cancels++,speak:u=>utterances.push(u),addEventListener:(k,f)=>events.set(k,f),removeEventListener:k=>events.delete(k)};win.SpeechSynthesisUtterance=class{constructor(text){this.text=text}};}
   const doc={hidden:false,addEventListener:(k,f)=>events.set(k,f),removeEventListener:k=>events.delete(k)};
-  const api=createSpeechController({windowRef:win,documentRef:doc,recordings,setTimer:(f,ms)=>{timers.set(++tick,{f,ms});return tick},clearTimer:k=>timers.delete(k)});
-  return {api,audios,utterances,events,doc,timers,get cancels(){return cancels}};
+  const api=createSpeechController({windowRef:win,documentRef:doc,recordings,allowSystemSpeech,setTimer:(f,ms)=>{timers.set(++tick,{f,ms});return tick},clearTimer:k=>timers.delete(k)});
+  return {api,audios,utterances,events,doc,timers,get cancels(){return cancels},get voiceReads(){return voiceReads}};
 }
 const request={id:0,chapterId:'first',text:'十九点时我不在场。',name:'甲'};
 const manifest={'first:0':{src:'/audio/first-0.mp3',text:request.text},'second:0':{src:'/audio/second-0.mp3',text:request.text}};
@@ -66,4 +66,52 @@ test('stale recording text falls back; hidden/pagehide stops actual audio withou
 test('local recordings work when speech synthesis is absent',()=>{
   const h=harness({recordings:manifest,speech:false});assert.equal(h.api.supported,true);
   h.api.play(request);assert.equal(h.audios.length,1);h.audios[0].onended();assert.equal(h.api.getState().activeId,null);h.api.destroy();
+});
+
+test('recordings-only mode plays exact recordings without querying or selecting system voices',()=>{
+  const h=harness({recordings:manifest,voices:[{lang:'zh-CN',name:'中文'}],allowSystemSpeech:false});
+  assert.equal(h.api.supported,true);
+  assert.equal(h.events.has('voiceschanged'),false);
+  assert.equal(h.timers.size,0);
+  h.api.setVoice('中文');
+  assert.equal(h.api.getState().selectedVoice,'');
+  h.api.play(request);
+  assert.equal(h.audios.length,1);
+  assert.equal(h.audios[0].src,manifest['first:0'].src);
+  assert.equal(h.api.getState().mode,'recording');
+  h.audios[0].onplaying();
+  h.audios[0].onended();
+  h.api.destroy();
+  assert.equal(h.voiceReads,0);
+  assert.equal(h.utterances.length,0);
+  assert.equal(h.cancels,0);
+});
+
+test('recordings-only mode leaves missing or revised testimony silent even with system voices available',()=>{
+  const h=harness({recordings:manifest,voices:[{lang:'zh-CN',name:'中文'}],allowSystemSpeech:false});
+  for(const change of [{chapterId:'rewritten'},{text:'新版证词'}]) {
+    h.api.play({...request,...change});
+    assert.equal(h.api.getState().activeId,null);
+    assert.match(h.api.getState().message,/配音待更新/);
+  }
+  assert.equal(h.audios.length,0);
+  assert.equal(h.utterances.length,0);
+  assert.equal(h.voiceReads,0);
+  h.api.destroy();
+});
+
+for(const failure of ['rejected','constructor','error']) test(`recordings-only mode never falls back after ${failure} audio failure`,async()=>{
+  const h=harness({recordings:manifest,voices:[{lang:'zh-CN',name:'中文'}],allowSystemSpeech:false,
+    rejectPlay:failure==='rejected',throwAudio:failure==='constructor'});
+  h.api.play(request);
+  if(failure==='error')h.audios[0].onerror();
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(h.api.getState().activeId,null);
+  assert.doesNotMatch(h.api.getState().message,/再次点击|设备中文|系统/);
+  h.api.play(request);
+  assert.equal(h.api.getState().activeId,null);
+  assert.match(h.api.getState().message,/无法播放/);
+  assert.equal(h.utterances.length,0);
+  assert.equal(h.voiceReads,0);
+  h.api.destroy();
 });

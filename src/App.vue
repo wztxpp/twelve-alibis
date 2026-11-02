@@ -6,15 +6,20 @@ import CharacterCard from './components/CharacterCard.vue'
 import StoryScene from './components/StoryScene.vue'
 import RulesDialog from './components/RulesDialog.vue'
 import { useGame } from './composables/useGame.js'
-import { createSpeechController } from './audio/speech.js'
+import { createSpeechController, matchingRecording } from './audio/speech.js'
+import { recordings } from './audio/recordings.js'
 
 const speechState = ref({ voices: [], selectedVoice: '', activeId: null, supported: false, message: '点击人物卡片下方的“听证词”开始。' })
-const speech = createSpeechController({ onStateChange: state => { speechState.value = state } })
+const speech = createSpeechController({ allowSystemSpeech: false, onStateChange: state => { speechState.value = state } })
 const game = useGame({ stopAudio: () => speech.stop() })
 const { data, current, level, selected, hintsShown, revealed, solved, showSolution, showEnding, feedback,
   progress, scenePhase, note, records, inspectedCount, canSubmit, unlocked, toggle, clear, recordOpened, isInspected } = game
 const playingScene = computed(() => scenePhase.value === 'opening' || scenePhase.value === 'ending')
 const activeScene = computed(() => scenePhase.value === 'opening' ? level.value.opening : level.value.ending)
+const recordedSpeakers = computed(() => new Set(level.value.statements.flatMap((statement, index) => {
+  const speaker = statement.speaker ?? index
+  return matchingRecording(recordings, level.value.id, speaker, statement.text) ? [speaker] : []
+})))
 const rulesDialog = ref(null)
 const resultPanel = ref(null)
 const hintPanel = ref(null)
@@ -24,6 +29,7 @@ const smooth = () => window.matchMedia('(prefers-reduced-motion: reduce)').match
 async function scrollTo(target) { await nextTick(); (target.value?.$el || target.value)?.scrollIntoView({ behavior: smooth(), block: 'start' }) }
 function selectChapter(index) { if (game.load(index)) window.scrollTo({ top: 0, behavior: smooth() }) }
 function speak(id) {
+  if (!recordedSpeakers.value.has(id)) return
   const statement = level.value.statements.find((s, index) => (s.speaker ?? index) === id)
   speech.play({ id, chapterId: level.value.id, text: statement.text, name: data.names[id], voiceProfile: data.characters?.find(c => c.id === id)?.voiceProfile })
 }
@@ -50,7 +56,7 @@ onBeforeUnmount(() => speech.destroy())
     <header class="top"><a class="brand" href="#">十二份证词<span>THE TWELVE STATEMENTS</span></a><button class="quiet" id="rulesBtn" @click="rulesDialog.open()">玩法说明 <span>↗</span></button></header>
     <main>
       <aside>
-        <div class="case-label">悬疑视觉小说 / 三章连作</div><h1>空席。<br>最后一航。</h1><p class="intro">十二份证词，一位死去的船长。<br>声音还在，开口的人已经不在了。</p>
+        <div class="case-label">悬疑视觉小说 / 三章连作</div><h1>空席。<br>最后一航。</h1><p class="intro">十二位证人、一位死者，还有你。<br>声音还在，开口的人已经不在了。</p>
         <ChapterNav :levels="data.levels" :current="current" :progress="progress" :unlocked="unlocked" @select="selectChapter" />
         <div class="field-note"><span>调查员守则</span><p>说谎的人不一定杀了人。<br>说真话的人也未必无辜。</p><div class="stamp">逻辑验证<br><b>唯一解</b></div></div><div class="side-foot">连续悬疑 · VOL. 05<br>含死亡、丧亲及险情描写<br>进度保存在此浏览器</div>
       </aside>
@@ -72,14 +78,14 @@ onBeforeUnmount(() => speech.destroy())
         <template v-if="!playingScene">
         <div class="investigation-toolbar"><span>现场调查 · {{ inspectedCount }}/{{ records.length }} 份记录已读</span><button class="quiet" @click="replayScene()">回看开场 ↺</button></div>
         <EvidenceArchive :key="level.id" :level="level" :records="records" :inspected-count="inspectedCount" :is-inspected="isInspected" v-model:note="note" @inspect="recordOpened" />
-        <div class="brief"><span class="brief-icon">!</span><p>十二人中恰有 <strong id="liarCount">{{ level.liarCount }}</strong> 位隐瞒者。<b>隐瞒者的证词为假，其余人的证词为真。</b></p><button id="hintBtn" class="quiet" :disabled="hintsShown >= level.hints.length" @click="hint">{{ !hintsShown ? '给我线索 ✧' : hintsShown === level.hints.length ? '线索已全部展开' : `下一条线索 ${hintsShown}/${level.hints.length}` }}</button></div>
-        <div class="evidence-header"><h3>证词记录 <span>12 份</span></h3><span>点立绘听证词 · 点姓名或证词作标记</span></div>
-        <div class="audio-notice">新版剧情暂未制作角色配音。“听证词”使用设备中文朗读，不自动播放。</div><details class="voice-settings"><summary>语音设置 · 设备朗读</summary><label>中文音色 <select :value="speechState.selectedVoice || ''" @change="speech.setVoice($event.target.value)"><option value="">自动选择中文音色</option><option v-for="voice in speechState.voices || []" :key="voice.id" :value="voice.id">{{ voice.name }} · {{ voice.lang }}</option></select></label></details><p id="audioStatus" role="status" aria-live="polite">{{ speechState.message }}</p>
+        <div class="brief"><span class="brief-icon">!</span><p>十二位证人中恰有 <strong id="liarCount">{{ level.liarCount }}</strong> 位隐瞒者。<b>隐瞒者的证词为假，其余人的证词为真。</b></p><button id="hintBtn" class="quiet" :disabled="hintsShown >= level.hints.length" @click="hint">{{ !hintsShown ? '给我线索 ✧' : hintsShown === level.hints.length ? '线索已全部展开' : `下一条线索 ${hintsShown}/${level.hints.length}` }}</button></div>
+        <div class="evidence-header"><h3>证词记录 <span>12 份</span></h3><span>点姓名或证词作标记</span></div>
+        <div v-if="recordedSpeakers.size < level.statements.length" class="audio-notice">本章配音待更新，请先阅读文字。</div><p v-if="recordedSpeakers.size" id="audioStatus" role="status" aria-live="polite">{{ speechState.message }}</p>
         <div id="cards" class="cards">
           <CharacterCard v-for="(statement, index) in level.statements" :key="`${level.id}:${statement.speaker ?? index}`"
             :id="statement.speaker ?? index" :name="data.names[statement.speaker ?? index]" :role="level.castRoles[statement.speaker ?? index]"
             :character="data.characters?.find(c => c.id === (statement.speaker ?? index))" :statement="statement.text" :source="statement.source" :selected="selected.has(statement.speaker ?? index)" :speaking="speechState.activeId === (statement.speaker ?? index)"
-            :speech-supported="speechState.supported" @toggle="toggle" @speak="speak" />
+            :speech-supported="speechState.supported && recordedSpeakers.has(statement.speaker ?? index)" @toggle="toggle" @speak="speak" />
         </div>
         <section v-if="hintsShown" id="hintPanel" ref="hintPanel" class="hint-panel" aria-live="polite"><h3>调查线索</h3><p v-for="(clue, index) in level.hints.slice(0, hintsShown)" :key="index">{{ index + 1 }}. {{ clue }}</p><small>线索逐步展开，不会扣除任何机会。</small></section>
         <section v-if="feedback" id="result" ref="resultPanel" class="result" :class="feedback.kind" aria-live="polite"><h3>{{ feedback.title }}</h3><p>{{ feedback.text }}</p></section>

@@ -20,9 +20,9 @@ export function matchingRecording(manifest, chapterId, id, text) {
 export function createSpeechController({
   onStateChange = () => {}, windowRef = globalThis.window, documentRef = globalThis.document,
   setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
-  recordings = bundledRecordings,
+  recordings = bundledRecordings, allowSystemSpeech = true,
 } = {}) {
-  const synth = windowRef?.speechSynthesis;
+  const synth = allowSystemSpeech ? windowRef?.speechSynthesis : undefined;
   const systemSupported = !!(synth && windowRef?.SpeechSynthesisUtterance);
   const recordingSupported = typeof windowRef?.Audio === 'function';
   const supported = systemSupported || (recordingSupported && Object.keys(recordings).length > 0);
@@ -59,7 +59,7 @@ export function createSpeechController({
     emit(nextMessage);
   }
   function setVoice(id = '') {
-    if (destroyed) return;
+    if (destroyed || !allowSystemSpeech) return;
     stop(); refreshVoices();
     const voice = voices.find(v => voiceId(v) === id || v.name === id);
     selectedVoice = voice ? voiceId(voice) : '';
@@ -67,10 +67,13 @@ export function createSpeechController({
   }
   function playRecording(entry, request, key) {
     let audio;
-    try { audio = new windowRef.Audio(entry.src); } catch { failedRecordings.add(key); emit('角色录音无法打开。再次点击将使用设备中文语音。'); return; }
+    const failureMessage = allowSystemSpeech
+      ? '角色录音未能播放。再次点击将使用设备中文语音；不会自动切换播放。'
+      : '原有录音暂时无法播放，请直接阅读证词。';
+    try { audio = new windowRef.Audio(entry.src); } catch { failedRecordings.add(key); emit(failureMessage); return; }
     const item = {id:request.id, key, kind:'recording', audio, token:++generation, startTimer:null, endTimer:null};
     active = item; emit(`正在加载${request.name}的角色录音…`);
-    const fail = () => { if (!isCurrent(item)) return; failedRecordings.add(key); finish(item, '角色录音未能播放。再次点击将使用设备中文语音；不会自动切换播放。'); };
+    const fail = () => { if (!isCurrent(item)) return; failedRecordings.add(key); finish(item, failureMessage); };
     audio.onplaying = () => {
       if (!isCurrent(item)) return;
       clearTimer(item.startTimer); emit(`正在播放：${request.name}的角色录音。再次点击可停止。`);
@@ -88,6 +91,10 @@ export function createSpeechController({
     stop();
     const entry = matchingRecording(recordings,chapterId,id,text);
     if (recordingSupported && entry && !failedRecordings.has(key)) { playRecording(entry,{id,name},key); return; }
+    if (!allowSystemSpeech) {
+      emit(entry ? '原有录音暂时无法播放，请直接阅读证词。' : '本章配音待更新，请直接阅读证词。');
+      return;
+    }
     if (!systemSupported) { emit('此浏览器不支持语音朗读，请直接阅读证词。'); return; }
     refreshVoices();
     if (!voices.length) { waitingForVoices = true; emit('暂未检测到中文语音。请在设备语音设置中启用中文语音后重试；文字证词仍可阅读。'); return; }
