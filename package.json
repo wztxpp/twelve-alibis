@@ -1,0 +1,17 @@
+{
+  "name": "kongxi-testimony-game",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "description": "空席：同一邮轮航程中的十二人三章推理游戏",
+  "engines": {"node": "^20.19.0 || >=22.12.0"},
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js",
+    "check": "npm run test && npm run build"
+  },
+  "dependencies": {"vue": "3.5.44"},
+  "devDependencies": {"@vitejs/plugin-vue": "6.0.10", "vite": "8.3.5"}
+}
