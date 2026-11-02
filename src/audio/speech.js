@@ -28,7 +28,7 @@ export function createSpeechController({
   const supported = systemSupported || (recordingSupported && Object.keys(recordings).length > 0);
   let voices = [], active = null, generation = 0, destroyed = false, waitingForVoices = false, selectedVoice = '';
   const failedRecordings = new Set();
-  let message = supported ? '点击“听证词”开始；再次点击停止。可在上方选择更合适的中文音色。' : '此浏览器不支持语音朗读；所有证词仍可直接阅读。';
+  let message = supported ? '点击立绘或“听证词”开始，再次点击停止；点击姓名或证词只切换标记。' : '此浏览器不支持语音朗读；所有证词仍可直接阅读。';
   const getState = () => ({ supported, activeId: active?.id ?? null, message, chineseVoices: voices.length,
     selectedVoice, voices: voices.map(v => ({id: voiceId(v), name: v.name, lang: v.lang, localService: !!v.localService})),
     mode: active?.kind ?? null });
