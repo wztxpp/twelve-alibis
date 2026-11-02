@@ -8,7 +8,7 @@ import RulesDialog from './components/RulesDialog.vue'
 import { useGame } from './composables/useGame.js'
 import { createSpeechController, SPEECH_DISCLOSURE } from './audio/speech.js'
 
-const speechState = ref({ activeId: null, supported: false, message: '点击人物卡片下方的“听证词”开始。' })
+const speechState = ref({ voices: [], selectedVoice: '', activeId: null, supported: false, message: '点击人物卡片下方的“听证词”开始。' })
 const speech = createSpeechController({ onStateChange: state => { speechState.value = state } })
 const game = useGame({ stopAudio: () => speech.stop() })
 const { data, current, level, selected, hintsShown, revealed, solved, showSolution, showEnding, feedback,
@@ -23,7 +23,7 @@ async function scrollTo(target) { await nextTick(); (target.value?.$el || target
 function selectChapter(index) { if (game.load(index)) window.scrollTo({ top: 0, behavior: smooth() }) }
 function speak(id) {
   const statement = level.value.statements.find((s, index) => (s.speaker ?? index) === id)
-  speech.play({ id, index: id, text: statement.text, name: data.names[id] })
+  speech.play({ id, chapterId: level.value.id, text: statement.text, name: data.names[id], voiceProfile: data.characters?.find(c => c.id === id)?.voiceProfile })
 }
 async function submit() { const success = game.submit(); await scrollTo(success ? endingPanel : resultPanel) }
 async function hint() { game.hint(); await scrollTo(hintPanel) }
@@ -55,11 +55,11 @@ onBeforeUnmount(() => speech.destroy())
         <EvidenceArchive :key="level.id" :level="level" :records="records" :inspected-count="inspectedCount" :is-inspected="isInspected" v-model:note="note" @inspect="recordOpened" />
         <div class="brief"><span class="brief-icon">!</span><p>十二人中恰有 <strong id="liarCount">{{ level.liarCount }}</strong> 位隐瞒者。<b>隐瞒者的证词为假，其余人的证词为真。</b></p><button id="hintBtn" class="quiet" :disabled="hintsShown >= level.hints.length" @click="hint">{{ !hintsShown ? '给我线索 ✧' : hintsShown === level.hints.length ? '线索已全部展开' : `下一条线索 ${hintsShown}/${level.hints.length}` }}</button></div>
         <div class="evidence-header"><h3>证词记录 <span>12 份</span></h3><span>点击卡片，标记隐瞒者</span></div>
-        <div class="audio-notice">{{ SPEECH_DISCLOSURE }}</div><p id="audioStatus" role="status" aria-live="polite">{{ speechState.message }}</p>
+        <div class="audio-notice">{{ SPEECH_DISCLOSURE }}</div><details class="voice-settings"><summary>语音设置 · 系统后备音色</summary><label>中文音色 <select :value="speechState.selectedVoice || ''" @change="speech.setVoice($event.target.value)"><option value="">自动：按角色与音色质量选择</option><option v-for="voice in speechState.voices || []" :key="voice.id" :value="voice.id">{{ voice.name }} · {{ voice.lang }}</option></select></label><p>如有本章配音，将优先播放配音；这里仅调整系统后备朗读。</p></details><p id="audioStatus" role="status" aria-live="polite">{{ speechState.message }}</p>
         <div id="cards" class="cards">
           <CharacterCard v-for="(statement, index) in level.statements" :key="`${level.id}:${statement.speaker ?? index}`"
             :id="statement.speaker ?? index" :name="data.names[statement.speaker ?? index]" :role="level.castRoles[statement.speaker ?? index]"
-            :statement="statement.text" :selected="selected.has(statement.speaker ?? index)" :speaking="speechState.activeId === (statement.speaker ?? index)"
+            :character="data.characters?.find(c => c.id === (statement.speaker ?? index))" :statement="statement.text" :selected="selected.has(statement.speaker ?? index)" :speaking="speechState.activeId === (statement.speaker ?? index)"
             :speech-supported="speechState.supported" @toggle="toggle" @speak="speak" />
         </div>
         <section v-if="hintsShown" id="hintPanel" ref="hintPanel" class="hint-panel" aria-live="polite"><h3>调查线索</h3><p v-for="(clue, index) in level.hints.slice(0, hintsShown)" :key="index">{{ index + 1 }}. {{ clue }}</p><small>线索逐步展开，不会扣除任何机会。</small></section>
