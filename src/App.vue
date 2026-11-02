@@ -1,18 +1,20 @@
 <script setup>
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import ChapterNav from './components/ChapterNav.vue'
 import EvidenceArchive from './components/EvidenceArchive.vue'
 import CharacterCard from './components/CharacterCard.vue'
-import ChapterEnding from './components/ChapterEnding.vue'
+import StoryScene from './components/StoryScene.vue'
 import RulesDialog from './components/RulesDialog.vue'
 import { useGame } from './composables/useGame.js'
-import { createSpeechController, SPEECH_DISCLOSURE } from './audio/speech.js'
+import { createSpeechController } from './audio/speech.js'
 
 const speechState = ref({ voices: [], selectedVoice: '', activeId: null, supported: false, message: '点击人物卡片下方的“听证词”开始。' })
 const speech = createSpeechController({ onStateChange: state => { speechState.value = state } })
 const game = useGame({ stopAudio: () => speech.stop() })
 const { data, current, level, selected, hintsShown, revealed, solved, showSolution, showEnding, feedback,
-  progress, note, records, inspectedCount, canSubmit, unlocked, toggle, clear, recordOpened, isInspected } = game
+  progress, scenePhase, note, records, inspectedCount, canSubmit, unlocked, toggle, clear, recordOpened, isInspected } = game
+const playingScene = computed(() => scenePhase.value === 'opening' || scenePhase.value === 'ending')
+const activeScene = computed(() => scenePhase.value === 'opening' ? level.value.opening : level.value.ending)
 const rulesDialog = ref(null)
 const resultPanel = ref(null)
 const hintPanel = ref(null)
@@ -26,6 +28,8 @@ function speak(id) {
   speech.play({ id, chapterId: level.value.id, text: statement.text, name: data.names[id], voiceProfile: data.characters?.find(c => c.id === id)?.voiceProfile })
 }
 async function submit() { const success = game.submit(); await scrollTo(success ? endingPanel : resultPanel) }
+async function completeScene() { game.completeScene(); await scrollTo(endingPanel) }
+async function replayScene(ending = false) { ending ? game.startEnding() : game.startOpening(); await scrollTo(endingPanel) }
 async function hint() { game.hint(); await scrollTo(hintPanel) }
 async function toggleSolution() {
   const needsConfirmation = !showSolution.value && !solved.value && !revealed.value
@@ -46,28 +50,44 @@ onBeforeUnmount(() => speech.destroy())
     <header class="top"><a class="brand" href="#">十二份证词<span>THE TWELVE STATEMENTS</span></a><button class="quiet" id="rulesBtn" @click="rulesDialog.open()">玩法说明 <span>↗</span></button></header>
     <main>
       <aside>
-        <div class="case-label">逻辑调查局 / 案件档案</div><h1>空席。<br>最后一航。</h1><p class="intro">十二位乘客，十三套餐具。<br>每个人都欠过去一句真话。</p>
+        <div class="case-label">悬疑视觉小说 / 三章连作</div><h1>空席。<br>最后一航。</h1><p class="intro">十二份证词，一位死去的船长。<br>声音还在，开口的人已经不在了。</p>
         <ChapterNav :levels="data.levels" :current="current" :progress="progress" :unlocked="unlocked" @select="selectChapter" />
-        <div class="field-note"><span>调查员守则</span><p>不要凭直觉指认。<br>让每一份证词，都经得起检验。</p><div class="stamp">逻辑验证<br><b>唯一解</b></div></div><div class="side-foot">连续悬疑 · VOL. 04<br>无需注册 · 进度保存在此浏览器</div>
+        <div class="field-note"><span>调查员守则</span><p>说谎的人不一定杀了人。<br>说真话的人也未必无辜。</p><div class="stamp">逻辑验证<br><b>唯一解</b></div></div><div class="side-foot">连续悬疑 · VOL. 05<br>含死亡、丧亲及险情描写<br>进度保存在此浏览器</div>
       </aside>
       <section class="workspace">
         <div class="case-head"><div><div id="caseTag" class="eyebrow">CHAPTER 0{{ current + 1 }} / {{ data.storyTitle || '空席' }}</div><h2 id="title">{{ level.title }}</h2><p id="story">{{ level.subtitle }}</p></div><span class="case-number" id="caseNum">0{{ current + 1 }}</span></div>
+        <div ref="endingPanel" class="scene-anchor">
+          <Transition name="chapter-scene" mode="out-in">
+            <StoryScene v-if="playingScene && activeScene" :key="activeScene.id" :scene="activeScene" :characters="data.characters" :label="scenePhase === 'opening' ? '进入调查 →' : '查看本章复盘 →'" @complete="completeScene" />
+            <section v-else-if="scenePhase === 'closed'" key="closed" class="chapter-recap" aria-label="本章复盘">
+              <div class="eyebrow">{{ current === 2 ? '归航 / 全篇完' : '真相已确认 / 下一幕待续' }}</div>
+              <h3>{{ current === 2 ? '把名字留在记录里。' : '这次判断，改变了接下来发生的事。' }}</h3>
+              <p>{{ level.solutionSummary }}</p>
+              <p>本轮隐瞒者：{{ level.answer.map(id => data.names[id]).join('、') }}。隐瞒者不等于凶手，完整经过见下方推理手记。</p>
+              <button v-if="current < 2" class="primary" @click="selectChapter(current + 1)">进入下一章 →</button>
+              <button class="quiet" @click="replayScene(true)">重看本章结局</button>
+            </section>
+          </Transition>
+        </div>
+        <template v-if="!playingScene">
+        <div class="investigation-toolbar"><span>现场调查 · {{ inspectedCount }}/{{ records.length }} 份记录已读</span><button class="quiet" @click="replayScene()">回看开场 ↺</button></div>
         <EvidenceArchive :key="level.id" :level="level" :records="records" :inspected-count="inspectedCount" :is-inspected="isInspected" v-model:note="note" @inspect="recordOpened" />
         <div class="brief"><span class="brief-icon">!</span><p>十二人中恰有 <strong id="liarCount">{{ level.liarCount }}</strong> 位隐瞒者。<b>隐瞒者的证词为假，其余人的证词为真。</b></p><button id="hintBtn" class="quiet" :disabled="hintsShown >= level.hints.length" @click="hint">{{ !hintsShown ? '给我线索 ✧' : hintsShown === level.hints.length ? '线索已全部展开' : `下一条线索 ${hintsShown}/${level.hints.length}` }}</button></div>
         <div class="evidence-header"><h3>证词记录 <span>12 份</span></h3><span>点立绘听证词 · 点姓名或证词作标记</span></div>
-        <div class="audio-notice">{{ SPEECH_DISCLOSURE }}</div><details class="voice-settings"><summary>语音设置 · 系统后备音色</summary><label>中文音色 <select :value="speechState.selectedVoice || ''" @change="speech.setVoice($event.target.value)"><option value="">自动：按角色与音色质量选择</option><option v-for="voice in speechState.voices || []" :key="voice.id" :value="voice.id">{{ voice.name }} · {{ voice.lang }}</option></select></label><p>如有本章配音，将优先播放配音；这里仅调整系统后备朗读。</p></details><p id="audioStatus" role="status" aria-live="polite">{{ speechState.message }}</p>
+        <div class="audio-notice">新版剧情暂未制作角色配音。“听证词”使用设备中文朗读，不自动播放。</div><details class="voice-settings"><summary>语音设置 · 设备朗读</summary><label>中文音色 <select :value="speechState.selectedVoice || ''" @change="speech.setVoice($event.target.value)"><option value="">自动选择中文音色</option><option v-for="voice in speechState.voices || []" :key="voice.id" :value="voice.id">{{ voice.name }} · {{ voice.lang }}</option></select></label></details><p id="audioStatus" role="status" aria-live="polite">{{ speechState.message }}</p>
         <div id="cards" class="cards">
           <CharacterCard v-for="(statement, index) in level.statements" :key="`${level.id}:${statement.speaker ?? index}`"
             :id="statement.speaker ?? index" :name="data.names[statement.speaker ?? index]" :role="level.castRoles[statement.speaker ?? index]"
-            :character="data.characters?.find(c => c.id === (statement.speaker ?? index))" :statement="statement.text" :selected="selected.has(statement.speaker ?? index)" :speaking="speechState.activeId === (statement.speaker ?? index)"
+            :character="data.characters?.find(c => c.id === (statement.speaker ?? index))" :statement="statement.text" :source="statement.source" :selected="selected.has(statement.speaker ?? index)" :speaking="speechState.activeId === (statement.speaker ?? index)"
             :speech-supported="speechState.supported" @toggle="toggle" @speak="speak" />
         </div>
         <section v-if="hintsShown" id="hintPanel" ref="hintPanel" class="hint-panel" aria-live="polite"><h3>调查线索</h3><p v-for="(clue, index) in level.hints.slice(0, hintsShown)" :key="index">{{ index + 1 }}. {{ clue }}</p><small>线索逐步展开，不会扣除任何机会。</small></section>
         <section v-if="feedback" id="result" ref="resultPanel" class="result" :class="feedback.kind" aria-live="polite"><h3>{{ feedback.title }}</h3><p>{{ feedback.text }}</p></section>
-        <section v-if="showSolution" id="solution" ref="solutionPanel" class="solution"><h3>推理手记</h3><p>隐瞒者：{{ level.answer.map(id => data.names[id]).join('、') }}。</p><p class="case-answer">{{ level.solutionSummary }}</p><ol><li v-for="(step, index) in level.solution" :key="index">{{ step }}</li></ol></section>
-        <ChapterEnding v-if="showEnding" ref="endingPanel" :resolution="level.resolution" :final="current === data.levels.length - 1" @continue="selectChapter(current + 1)" />
+        <section v-if="showSolution" id="solution" ref="solutionPanel" class="solution"><h3>推理手记</h3><p>隐瞒者：{{ level.answer.map(id => data.names[id]).join('、') }}。</p><p class="case-answer">{{ level.solutionSummary }}</p><h4>还原时间线</h4><ol class="case-timeline"><li v-for="event in level.timeline" :key="event.time"><strong>{{ event.time }}</strong><span>{{ event.text }}</span></li></ol><h4>证据怎样排除其他可能</h4><ol><li v-for="(step, index) in level.solution" :key="index">{{ step }}</li></ol><h4>他们各自隐瞒了什么</h4><p v-for="reason in level.lieReasons" :key="reason.speaker"><strong>{{ data.names[reason.speaker] }}：</strong>{{ reason.reason }}</p></section>
+        <button v-if="showEnding && scenePhase !== 'closed'" class="primary" @click="replayScene(true)">进入对质与后续剧情 →</button>
         <div class="actions"><div class="selection"><span class="selection-dot"></span><div>已标记 <strong id="selectedCount">{{ selected.size }}</strong> / <span id="targetCount">{{ level.liarCount }}</span> 人<small id="selectionNote">{{ canSubmit ? '人数已齐，可以提交判断。' : '仔细比对证词，再提交你的判断。' }}</small></div></div><div class="action-buttons"><button id="clearBtn" class="quiet" :disabled="selected.size === 0" @click="clear">清空</button><button id="submitBtn" class="primary" :disabled="!canSubmit" @click="submit">提交判断 <span>→</span></button></div></div>
         <div class="below"><button id="solutionBtn" class="quiet" @click="toggleSolution">{{ showSolution ? '收起推理过程' : '查看推理过程' }}</button><button id="replayBtn" class="quiet" @click="selectChapter(current)">重查本章 ↻</button><button id="newGameBtn" class="quiet" @click="reset">重新开始全篇</button></div>
+        </template>
         <footer>物证、时间线与全部证词，共同锁定唯一真相。<span>人物与场景均为虚构。</span></footer>
       </section>
     </main>

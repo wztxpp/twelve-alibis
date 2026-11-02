@@ -1,11 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import data from '../src/data/puzzles.json' with { type: 'json' }
 
-test('character expansion preserves every V4 testimony and logical world exactly', () => {
-  const logical = data.levels.map(l => ({id:l.id, statements:l.statements, worlds:l.worlds, answer:l.answer, solutionWorld:l.solutionWorld, liarCount:l.liarCount}))
-  assert.equal(createHash('sha256').update(JSON.stringify(logical)).digest('hex'), 'dee7a964567e5ef90925a8b5ad3d494a9da80605b4a9868141307b4cb1fd70d5')
+test('rewritten chapters preserve the same twelve people and isolate old saves and audio', () => {
+  assert.deepEqual(data.levels.map(l => l.id), ['last-voyage-1', 'last-voyage-2', 'last-voyage-3'])
+  for (const chapter of data.levels) {
+    assert.deepEqual(chapter.statements.map(s => s.speaker).sort((a,b) => a-b), Array.from({length:12},(_,i)=>i))
+    assert.deepEqual(chapter.castRoles, data.characters.map(c => c.role))
+  }
 })
 test('twelve distinct adult character directions align with names and public cards', () => {
   assert.equal(data.characters.length, 12)

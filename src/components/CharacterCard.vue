@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-const props = defineProps({ id: Number, name: String, role: String, statement: String, selected: Boolean, speaking: Boolean, speechSupported: Boolean, character: Object })
+const props = defineProps({ id: Number, name: String, role: String, statement: String, source: String, selected: Boolean, speaking: Boolean, speechSupported: Boolean, character: Object })
 defineEmits(['toggle', 'speak'])
 const number = computed(() => String(props.id + 1).padStart(2, '0'))
 const portrait = computed(() => `${import.meta.env.BASE_URL}assets/cruise-${number.value}.webp`)
@@ -13,6 +13,7 @@ const quote = computed(() => props.statement.replaceAll('“', '「').replaceAll
       <button type="button" class="card-body selection-button" :aria-pressed="selected" :aria-label="`${name}：${statement}，${selected ? '取消标记' : '标记为隐瞒者'}`" @click="$emit('toggle', id)"><span class="person"><span class="person-name">{{ name }}<small class="role">{{ character?.age ? `${character.age}岁 · ` : '' }}{{ role }}</small></span><span class="mark" aria-hidden="true">✓</span></span>
         <span class="quote">“{{ quote }}”</span><span class="card-foot">{{ selected ? '已标记 · 隐瞒者' : '点击姓名或证词标记' }}</span></button>
     </div>
+    <p v-if="source" class="testimony-source">{{ source }}</p>
     <details v-if="character" class="character-profile">
       <summary>{{ name }} · 人物档案</summary>
       <p>{{ character.publicBio }}</p><p v-if="character.habit"><b>小习惯：</b>{{ character.habit }}</p>

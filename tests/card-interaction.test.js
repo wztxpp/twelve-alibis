@@ -9,7 +9,7 @@ const { descriptor } = parse(readFileSync(new URL('../src/components/CharacterCa
 const render = new Function('Vue', compile(descriptor.template.content, { mode: 'function' }).code)(Vue)
 function card(overrides = {}) {
   const events = []
-  const ctx = { id: 2, name: '白榆', role: '律师', statement: '证词', quote: '证词', number: '03', portrait: '/portrait.webp', selected: false, speaking: false, speechSupported: true, character: null, $emit: (...args) => events.push(args), ...overrides }
+  const ctx = { id: 2, name: '白榆', role: '律师', statement: '证词', source: '', quote: '证词', number: '03', portrait: '/portrait.webp', selected: false, speaking: false, speechSupported: true, character: null, $emit: (...args) => events.push(args), ...overrides }
   const tree = render(ctx, [])
   const nodes = []
   function walk(node, ancestors = []) {

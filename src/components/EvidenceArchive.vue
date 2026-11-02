@@ -6,6 +6,7 @@ defineEmits(['inspect', 'update:note'])
   <section class="case-story">
     <div class="eyebrow">现场简报</div>
     <p id="prologue" class="prologue">{{ level.prologue }}</p><p id="briefing">{{ level.briefing }}</p>
+    <details v-if="level.recap?.length" class="journal"><summary>人物关系与前情 · 先理清发生了什么</summary><p v-for="line in level.recap" :key="line">{{ line }}</p></details>
     <div class="archive-heading"><strong>搜证档案</strong><span id="recordCount">已查阅 {{ inspectedCount }} / {{ records.length }}</span></div>
     <p class="archive-help">逐份打开现场记录，寻找条件与关联。所有推理条件都在记录和证词中，不需寻找隐藏像素。</p>
     <div id="evidence" class="record-grid">
